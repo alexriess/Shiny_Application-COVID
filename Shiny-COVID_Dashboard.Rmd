@@ -1,0 +1,108 @@
+---
+title: "Shiny"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(shiny)
+library(shinydashboard)
+library(ggplot2)
+library(plotly)
+library(htmltools)
+source("https://quantoid.net/files/r/full_height_box.r")
+ui <- dashboardPage(
+  dashboardHeader(title="COVID-19 Dashboard"),
+  dashboardSidebar(
+    uiOutput("state_selector")
+  ),
+  dashboardBody(
+    fluidRow(
+      column(width=7,
+             box(id="map-container", title="Map of COVID-19 Cases",
+                 plotlyOutput("map"), width=NULL)
+      ),
+      column(width=5,
+             box(title="COVID-19 Cases by Republican Vote", plotlyOutput("scatter"),
+                 width=NULL),
+             box(title="Data", DT::dataTableOutput("tab"), width=NULL)
+      )
+    )
+  ),
+ full_height_box("map-container", "map"),
+)
+
+server <- function(input, output){
+  library(ggplot2)
+  library(dplyr)
+  library(plotly)
+  library(DT)
+  library(rio)
+  library(sf)
+  library(stringr)
+  library(crosstalk)
+  library(d3scatter)
+  library(htmltools)
+  library(plotly)
+  setwd("~/Documents/Github_Pushing/Shiny_Application-COVID")
+  load("counties_covid_2.rda")
+    counties_covid <- counties_covid %>%
+    select(NAMELSAD, state, st, cases, repvote, geometry) %>%
+      mutate(text = paste(NAMELSAD, "\n", cases, " cases", sep=""),
+             repvote = repvote*100)
+
+
+  output$state_selector <- renderUI({
+    chc <- sort(unique(na.omit(counties_covid$state)))
+    selectInput(
+      inputId = "inpState",
+      label = "Choose a State",
+      choices = chc
+      )
+  })
+
+    tmp <- reactive({
+      req(input$inpState)
+      counties_covid %>%
+      filter(state == input$inpState) %>%
+        select(-state)
+    })
+
+
+  output$map <- renderPlotly({
+    req(tmp())
+    plot_ly(tmp(), split = ~ text,  color = ~log(cases),  alpha = 1,
+             hoverinfo="text", hoveron="fill", showlegend=FALSE)
+  })
+
+  output$scatter  <- renderPlotly({
+    req(tmp())
+    plot_ly(tmp(), x=~repvote, y=~cases, width="100%", type="scatter", height=300) %>%
+      add_markers() %>%
+      layout(xaxis=list(title="Republican Vote"),
+             yaxis=list(title="Number of COVID-19 Cases"))
+  })
+
+  output$tab <- DT::renderDataTable({
+    req(tmp())
+    tmp() %>%
+      datatable(extensions="Scroller", class="compact",
+      colnames = c("County", "State", "# Cases", "Republican\nVote"),
+      rownames=FALSE,
+      options = list(paging=FALSE,
+                     pageLength = 20, scrollY = "350px",
+                     columnDefs = list(list(className = 'dt-center',
+                                            targets = 0:3),
+                                       list(visible=FALSE, targets=c(4,5))))) %>%
+      formatRound(columns = "repvote", digits=0)
+  })
+
+
+}
+
+shinyApp(ui, server)
+```
